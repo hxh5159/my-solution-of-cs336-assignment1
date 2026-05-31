@@ -19,12 +19,14 @@ class Tokenizer:
         else:
             self.special_tokens_2_bytes = []
         # 通过循环结构将特殊的词节补充在self.byte_2_id_vocab中
-        for special_token in self.special_tokens:
+        for special_token in self.special_tokens_2_bytes:
             if special_token not in self.byte_2_id_vocab:
                 n=len(self.vocab)
                 self.vocab[n]=special_token
                 self.byte_2_id_vocab[special_token]=n
     # 通过序列化文件加载Tokenizer的类方法
+
+    @classmethod
     def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens=None):
         """
         Class method that loads a tokenizer from serialized files.
@@ -103,3 +105,71 @@ class Tokenizer:
             id_ = self.byte_2_id_vocab[merged_bytes]
             token_ids.append(id_)
         return token_ids
+    
+    def apply_merge(self, word_byte):
+        word = list(word_byte)
+        def get_pairs(word):
+            pairs = set()
+            prev_char = word[0]
+            for char in word[1:]:
+                pairs.add((prev_char, char))
+                prev_char = char
+            return pairs
+        word_pairs = get_pairs(word)
+        if not word_pairs:
+                return word
+        while True:
+            #find the minimum number of pair's ranking
+            bigram = min(word_pairs, key=lambda pair: self.merges_ranking.get(pair, float('inf')))
+            if bigram not in self.merges_ranking:
+                break
+            idx = 0
+            new_byte_token = []
+            first, second = bigram
+            while idx < len(word):
+                try:
+                    #find the nearest 'first' byte
+                    first_nearest = word.index(first, idx)
+                except ValueError:
+                    new_byte_token.extend(word[idx:])
+                    break
+                else:
+                    new_byte_token.extend(word[idx:first_nearest])
+                    idx = first_nearest
+                if word[first_nearest] == first and first_nearest+1 < len(word) and word[first_nearest+1] == second:
+                    new_byte_token.append(first+second)
+                    idx += 2
+                else:
+                    new_byte_token.append(word[first_nearest])
+                    idx += 1
+            word = new_byte_token
+            if len(word) == 1:
+                break
+            else:
+                word_pairs = get_pairs(word)
+        return word
+    
+    def pre_tokenization(self, s: str, special_token: list[str]) -> list[str]:
+        PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+
+        # ① 没有 special 也要按正则切
+        if not special_token:
+            return re.findall(PAT, s)
+
+        # ③ 长→短排序，防止短的抢先匹配
+        toks = sorted(special_token, key=len, reverse=True)
+        union = "|".join(re.escape(t) for t in toks)
+        parts = re.split(f"({union})", s)
+
+        out = []
+        st = set(special_token)
+        for part in parts:
+            if not part:
+                continue
+            # ② special 只作为边界，完全跳过
+            if part in st:
+                out.append(part)
+            else:
+                out.extend(re.findall(PAT, part))
+        return out
+

@@ -2,7 +2,7 @@
 import torch
 import torch.nn
 
-def save_checkpointing(model,optimizer,iteration,out):
+def save_checkpoint(model,optimizer,iteration,out):
     '''
     model:torch.nn.Module
     optimizer:torch.optim.Optimizer
